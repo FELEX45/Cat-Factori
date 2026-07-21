@@ -35,6 +35,11 @@ public class Mirror : MonoBehaviour
         _mirrorCam.farClipPlane = 250f;
         _mirrorCam.clearFlags = CameraClearFlags.Skybox;
 
+        // Камера зеркала не должна слушать звук (иначе warning про 2 AudioListener)
+        var mirrorListener = camGo.GetComponent<AudioListener>();
+        if (mirrorListener != null)
+            Destroy(mirrorListener);
+
         var urpData = camGo.AddComponent<UniversalAdditionalCameraData>();
         urpData.renderType = CameraRenderType.Base;
         urpData.renderShadows = true;
