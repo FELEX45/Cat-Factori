@@ -82,17 +82,101 @@ public class move : MonoBehaviour
         SetupPlayables();
         HidePlayerBodyFromFirstPersonCamera();
 
-        Camera mainCam = Camera.main;
-        if (mainCam != null)
-        {
-            cam = mainCam.transform;
-            cam.SetParent(transform);
-            cam.localPosition = new Vector3(0f, eyeHeight, 0f);
-            cam.localRotation = Quaternion.identity;
-        }
+        if (cam == null)
+            BindSceneCamera();
 
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
+    }
+
+    /// <summary>
+    /// Привязывает камеру активной сцены к игроку. Не уничтожает уже нужную Main Camera.
+    /// </summary>
+    public void BindSceneCamera()
+    {
+        Camera mainCam = Camera.main;
+        if (mainCam == null)
+        {
+            foreach (var c in FindObjectsByType<Camera>(FindObjectsInactive.Exclude))
+            {
+                if (c != null && c.enabled && c.gameObject.scene.IsValid()
+                    && c.gameObject.scene.name == LobbySessionManager.GameSceneName)
+                {
+                    mainCam = c;
+                    break;
+                }
+            }
+        }
+
+        // Уже привязана правильно — не трогаем (иначе Start() убьёт камеру после SetupLocalPlayer)
+        if (cam != null && mainCam != null && cam == mainCam.transform && cam.parent == transform)
+        {
+            EnsureSingleAudioListener(mainCam);
+            return;
+        }
+
+        // Убрать только чужие/старые камеры под игроком (не трогая mainCam)
+        for (int i = transform.childCount - 1; i >= 0; i--)
+        {
+            Transform child = transform.GetChild(i);
+            var childCam = child.GetComponent<Camera>();
+            if (childCam == null)
+                continue;
+            if (mainCam != null && childCam == mainCam)
+                continue;
+            Destroy(child.gameObject);
+        }
+
+        if (mainCam == null)
+            mainCam = CreateFallbackCamera();
+
+        if (mainCam == null)
+        {
+            Debug.LogError("[move] Нет камеры для привязки");
+            return;
+        }
+
+        if (!mainCam.CompareTag("MainCamera"))
+            mainCam.tag = "MainCamera";
+
+        EnsureSingleAudioListener(mainCam);
+
+        cam = mainCam.transform;
+        cam.SetParent(transform, false);
+        cam.localPosition = new Vector3(0f, eyeHeight, 0f);
+        cam.localRotation = Quaternion.identity;
+        pitch = 0f;
+        mainCam.enabled = true;
+    }
+
+    Camera CreateFallbackCamera()
+    {
+        var go = new GameObject("PlayerCamera");
+        var created = go.AddComponent<Camera>();
+        created.tag = "MainCamera";
+        created.nearClipPlane = 0.05f;
+        go.AddComponent<AudioListener>();
+        Debug.LogWarning("[move] Создана запасная PlayerCamera");
+        return created;
+    }
+
+    static void EnsureSingleAudioListener(Camera keep)
+    {
+        var listeners = FindObjectsByType<AudioListener>(FindObjectsInactive.Include);
+        foreach (var listener in listeners)
+        {
+            if (listener == null)
+                continue;
+            if (keep != null && listener.gameObject == keep.gameObject)
+            {
+                listener.enabled = true;
+                continue;
+            }
+            Destroy(listener);
+        }
+
+        if (keep != null && keep.GetComponent<AudioListener>() == null)
+            keep.gameObject.AddComponent<AudioListener>();
     }
 
     void HidePlayerBodyFromFirstPersonCamera()
@@ -161,7 +245,7 @@ public class move : MonoBehaviour
         graph = PlayableGraph.Create("PlayerAnims");
         graph.SetTimeUpdateMode(DirectorUpdateMode.GameTime);
 
-        mixer = AnimationMixerPlayable.Create(graph, SlotCount, true);
+        mixer = AnimationMixerPlayable.Create(graph, SlotCount);
         var output = AnimationPlayableOutput.Create(graph, "Animation", animator);
         output.SetSourcePlayable(mixer);
 
@@ -191,6 +275,9 @@ public class move : MonoBehaviour
 
     void Update()
     {
+        if (cam == null)
+            BindSceneCamera();
+
         HandleCursor();
         HandleDanceInput();
         HandleLook();

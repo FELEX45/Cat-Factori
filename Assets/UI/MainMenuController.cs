@@ -28,6 +28,17 @@ public class MainMenuController : MonoBehaviour
     GameObject _joinPanel;
     GameObject _createPanel;
 
+    InputField _createNameField;
+    InputField _createPassField;
+    Text _createStatus;
+
+    InputField _joinNameField;
+    InputField _joinPassField;
+    Text _joinStatus;
+
+    Button _createButton;
+    Button _joinButton;
+
     static readonly Color BgDark = new Color(0.06f, 0.08f, 0.07f, 0.96f);
     static readonly Color PanelBg = new Color(0.10f, 0.14f, 0.12f, 0.98f);
     static readonly Color Accent = new Color(0.45f, 0.78f, 0.42f, 1f);
@@ -36,12 +47,14 @@ public class MainMenuController : MonoBehaviour
     static readonly Color ButtonPressed = new Color(0.12f, 0.18f, 0.14f, 1f);
     static readonly Color TextPrimary = new Color(0.92f, 0.95f, 0.90f, 1f);
     static readonly Color TextMuted = new Color(0.62f, 0.70f, 0.60f, 1f);
+    static readonly Color StatusError = new Color(0.95f, 0.45f, 0.35f, 1f);
 
     void Awake()
     {
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
         Time.timeScale = 1f;
+        GameSessionMode.SetOffline();
 
         _font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         if (_font == null)
@@ -53,9 +66,50 @@ public class MainMenuController : MonoBehaviour
             new Vector2(0.5f, 0.5f),
             100f);
 
+        LobbySessionManager.EnsureExists();
+
         EnsureEventSystem();
         BuildUI();
         ShowMain();
+    }
+
+    void OnEnable()
+    {
+        var lobby = LobbySessionManager.Instance;
+        if (lobby != null)
+            lobby.StatusChanged += OnLobbyStatusChanged;
+    }
+
+    void OnDisable()
+    {
+        var lobby = LobbySessionManager.Instance;
+        if (lobby != null)
+            lobby.StatusChanged -= OnLobbyStatusChanged;
+    }
+
+    void OnLobbyStatusChanged(string status)
+    {
+        if (_createStatus != null && _createPanel != null && _createPanel.activeSelf)
+        {
+            _createStatus.text = status ?? "";
+            _createStatus.color = IsErrorStatus(status) ? StatusError : TextMuted;
+        }
+
+        if (_joinStatus != null && _joinPanel != null && _joinPanel.activeSelf)
+        {
+            _joinStatus.text = status ?? "";
+            _joinStatus.color = IsErrorStatus(status) ? StatusError : TextMuted;
+        }
+    }
+
+    static bool IsErrorStatus(string status)
+    {
+        if (string.IsNullOrEmpty(status))
+            return false;
+        return status.StartsWith("Ошибка")
+               || status.Contains("не найдено")
+               || status.Contains("минимум")
+               || status.Contains("Введите");
     }
 
     void EnsureEventSystem()
@@ -99,11 +153,9 @@ public class MainMenuController : MonoBehaviour
         scaler.referenceResolution = new Vector2(1920, 1080);
         scaler.matchWidthOrHeight = 0.5f;
 
-        // Фон
         var bg = CreateImage(canvasGo.transform, "Background", BgDark);
         StretchFull(bg.rectTransform);
 
-        // Лёгкий акцент снизу
         var accentBar = CreateImage(canvasGo.transform, "AccentBar", Accent);
         var abRt = accentBar.rectTransform;
         abRt.anchorMin = new Vector2(0f, 0f);
@@ -116,12 +168,10 @@ public class MainMenuController : MonoBehaviour
         BuildMainPanel(_mainPanel.transform);
 
         _createPanel = CreatePanel(canvasGo.transform, "CreateLobbyPanel");
-        BuildPlaceholderPanel(_createPanel.transform, "Создать лобби",
-            "Лобби будет доступно после подключения сети.\nПока можно сразу перейти в игру.",
-            "В игру", OnCreateLobbyConfirm, ShowMain);
+        BuildCreateLobbyPanel(_createPanel.transform);
 
         _joinPanel = CreatePanel(canvasGo.transform, "JoinLobbyPanel");
-        BuildJoinPanel(_joinPanel.transform);
+        BuildJoinLobbyPanel(_joinPanel.transform);
 
         _settingsPanel = CreatePanel(canvasGo.transform, "SettingsPanel");
         BuildSettingsPanel(_settingsPanel.transform);
@@ -147,95 +197,113 @@ public class MainMenuController : MonoBehaviour
 
         CreateSpacer(parent, 28f);
 
-        CreateMenuButton(parent, $"Игра ({developerName})", () => LoadGameScene());
+        CreateMenuButton(parent, $"Игра ({developerName})", () => LoadGameSceneOffline());
         CreateMenuButton(parent, "Создать лобби", ShowCreate);
         CreateMenuButton(parent, "Подключиться к лобби", ShowJoin);
         CreateMenuButton(parent, "Настройки", ShowSettings);
         CreateMenuButton(parent, "Выход", OnQuit);
     }
 
-    void BuildPlaceholderPanel(Transform parent, string title, string body, string confirmLabel, UnityEngine.Events.UnityAction onConfirm, UnityEngine.Events.UnityAction onBack)
+    void BuildCreateLobbyPanel(Transform parent)
     {
-        var layout = parent.gameObject.AddComponent<VerticalLayoutGroup>();
-        layout.childAlignment = TextAnchor.MiddleCenter;
-        layout.spacing = 16f;
-        layout.padding = new RectOffset(48, 48, 48, 48);
-        layout.childControlWidth = true;
-        layout.childControlHeight = false;
-        layout.childForceExpandWidth = true;
+        SetupLobbyFormLayout(parent);
 
-        var fitter = parent.gameObject.AddComponent<ContentSizeFitter>();
-        fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-
-        var t = CreateText(parent, "Title", title, 40, TextPrimary, FontStyle.Bold);
+        var t = CreateText(parent, "Title", "Создать лобби", 40, TextPrimary, FontStyle.Bold);
         t.alignment = TextAnchor.MiddleCenter;
         SetPreferredHeight(t.gameObject, 48f);
 
-        var b = CreateText(parent, "Body", body, 20, TextMuted, FontStyle.Normal);
-        b.alignment = TextAnchor.MiddleCenter;
-        SetPreferredHeight(b.gameObject, 80f);
+        var hint = CreateText(parent, "Hint", "Ты будешь хостом. Пароль необязателен (если есть — от 8 символов).", 16, TextMuted, FontStyle.Normal);
+        hint.alignment = TextAnchor.MiddleCenter;
+        SetPreferredHeight(hint.gameObject, 40f);
 
-        CreateSpacer(parent, 12f);
-        CreateMenuButton(parent, confirmLabel, onConfirm);
-        CreateMenuButton(parent, "Назад", onBack);
+        _createNameField = CreateInputField(parent, "LobbyName", "Название лобби");
+        _createPassField = CreateInputField(parent, "LobbyPassword", "Пароль (необязательно)");
+        _createPassField.contentType = InputField.ContentType.Password;
+
+        _createStatus = CreateText(parent, "Status", "", 16, TextMuted, FontStyle.Normal);
+        _createStatus.alignment = TextAnchor.MiddleCenter;
+        SetPreferredHeight(_createStatus.gameObject, 48f);
+
+        CreateSpacer(parent, 8f);
+        _createButton = CreateMenuButton(parent, "Создать", () => _ = OnCreateLobbyClicked());
+        CreateMenuButton(parent, "Назад", ShowMain);
     }
 
-    void BuildJoinPanel(Transform parent)
+    void BuildJoinLobbyPanel(Transform parent)
     {
-        var layout = parent.gameObject.AddComponent<VerticalLayoutGroup>();
-        layout.childAlignment = TextAnchor.MiddleCenter;
-        layout.spacing = 14f;
-        layout.padding = new RectOffset(48, 48, 48, 48);
-        layout.childControlWidth = true;
-        layout.childControlHeight = false;
-        layout.childForceExpandWidth = true;
-
-        var fitter = parent.gameObject.AddComponent<ContentSizeFitter>();
-        fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        SetupLobbyFormLayout(parent);
 
         var t = CreateText(parent, "Title", "Подключиться к лобби", 40, TextPrimary, FontStyle.Bold);
         t.alignment = TextAnchor.MiddleCenter;
         SetPreferredHeight(t.gameObject, 48f);
 
-        var hint = CreateText(parent, "Hint", "Код лобби (пока заглушка)", 18, TextMuted, FontStyle.Normal);
+        var hint = CreateText(parent, "Hint", "Введи точное название лобби и пароль, если хост его задал.", 16, TextMuted, FontStyle.Normal);
         hint.alignment = TextAnchor.MiddleCenter;
-        SetPreferredHeight(hint.gameObject, 24f);
+        SetPreferredHeight(hint.gameObject, 40f);
 
-        var inputGo = new GameObject("LobbyCode", typeof(RectTransform), typeof(Image), typeof(InputField));
-        inputGo.transform.SetParent(parent, false);
-        var inputImg = inputGo.GetComponent<Image>();
-        inputImg.sprite = _uiSprite;
-        inputImg.type = Image.Type.Sliced;
-        inputImg.color = new Color(0.08f, 0.10f, 0.09f, 1f);
-        SetPreferredHeight(inputGo, 44f);
+        _joinNameField = CreateInputField(parent, "LobbyName", "Название лобби");
+        _joinPassField = CreateInputField(parent, "LobbyPassword", "Пароль (если есть)");
+        _joinPassField.contentType = InputField.ContentType.Password;
 
-        var placeholder = CreateText(inputGo.transform, "Placeholder", "Введите код…", 20, new Color(0.45f, 0.5f, 0.45f, 1f), FontStyle.Italic);
-        StretchFull(placeholder.rectTransform);
-        placeholder.rectTransform.offsetMin = new Vector2(12, 4);
-        placeholder.rectTransform.offsetMax = new Vector2(-12, -4);
-        placeholder.alignment = TextAnchor.MiddleLeft;
-        placeholder.raycastTarget = false;
-
-        var inputText = CreateText(inputGo.transform, "Text", "", 20, TextPrimary, FontStyle.Normal);
-        StretchFull(inputText.rectTransform);
-        inputText.rectTransform.offsetMin = new Vector2(12, 4);
-        inputText.rectTransform.offsetMax = new Vector2(-12, -4);
-        inputText.alignment = TextAnchor.MiddleLeft;
-        inputText.supportRichText = false;
-
-        var field = inputGo.GetComponent<InputField>();
-        field.textComponent = inputText;
-        field.placeholder = placeholder;
-        field.caretColor = Accent;
-        field.selectionColor = new Color(Accent.r, Accent.g, Accent.b, 0.35f);
+        _joinStatus = CreateText(parent, "Status", "", 16, TextMuted, FontStyle.Normal);
+        _joinStatus.alignment = TextAnchor.MiddleCenter;
+        SetPreferredHeight(_joinStatus.gameObject, 48f);
 
         CreateSpacer(parent, 8f);
-        CreateMenuButton(parent, "Подключиться", () =>
-        {
-            Debug.Log($"[MainMenu] Подключение к лобби: '{field.text}' (заглушка) → загрузка игры");
-            LoadGameScene();
-        });
+        _joinButton = CreateMenuButton(parent, "Подключиться", () => _ = OnJoinLobbyClicked());
         CreateMenuButton(parent, "Назад", ShowMain);
+    }
+
+    static void SetupLobbyFormLayout(Transform parent)
+    {
+        var layout = parent.gameObject.AddComponent<VerticalLayoutGroup>();
+        layout.childAlignment = TextAnchor.MiddleCenter;
+        layout.spacing = 12f;
+        layout.padding = new RectOffset(48, 48, 40, 40);
+        layout.childControlWidth = true;
+        layout.childControlHeight = false;
+        layout.childForceExpandWidth = true;
+
+        var fitter = parent.gameObject.AddComponent<ContentSizeFitter>();
+        fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+    }
+
+    async System.Threading.Tasks.Task OnCreateLobbyClicked()
+    {
+        if (_createButton != null)
+            _createButton.interactable = false;
+
+        try
+        {
+            var lobby = LobbySessionManager.EnsureExists();
+            await lobby.CreateLobbyAsync(
+                _createNameField != null ? _createNameField.text : "",
+                _createPassField != null ? _createPassField.text : "");
+        }
+        finally
+        {
+            if (_createButton != null)
+                _createButton.interactable = true;
+        }
+    }
+
+    async System.Threading.Tasks.Task OnJoinLobbyClicked()
+    {
+        if (_joinButton != null)
+            _joinButton.interactable = false;
+
+        try
+        {
+            var lobby = LobbySessionManager.EnsureExists();
+            await lobby.JoinLobbyByNameAsync(
+                _joinNameField != null ? _joinNameField.text : "",
+                _joinPassField != null ? _joinPassField.text : "");
+        }
+        finally
+        {
+            if (_joinButton != null)
+                _joinButton.interactable = true;
+        }
     }
 
     void BuildSettingsPanel(Transform parent)
@@ -332,14 +400,46 @@ public class MainMenuController : MonoBehaviour
         rt.anchorMin = new Vector2(0.5f, 0.5f);
         rt.anchorMax = new Vector2(0.5f, 0.5f);
         rt.pivot = new Vector2(0.5f, 0.5f);
-        rt.sizeDelta = new Vector2(520f, 0f);
+        rt.sizeDelta = new Vector2(560f, 0f);
         rt.anchoredPosition = Vector2.zero;
 
         go.SetActive(false);
         return go;
     }
 
-    void CreateMenuButton(Transform parent, string label, UnityEngine.Events.UnityAction onClick)
+    InputField CreateInputField(Transform parent, string name, string placeholderText)
+    {
+        var inputGo = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(InputField));
+        inputGo.transform.SetParent(parent, false);
+        var inputImg = inputGo.GetComponent<Image>();
+        inputImg.sprite = _uiSprite;
+        inputImg.type = Image.Type.Simple;
+        inputImg.color = new Color(0.08f, 0.10f, 0.09f, 1f);
+        SetPreferredHeight(inputGo, 44f);
+
+        var placeholder = CreateText(inputGo.transform, "Placeholder", placeholderText, 18, new Color(0.45f, 0.5f, 0.45f, 1f), FontStyle.Italic);
+        StretchFull(placeholder.rectTransform);
+        placeholder.rectTransform.offsetMin = new Vector2(12, 4);
+        placeholder.rectTransform.offsetMax = new Vector2(-12, -4);
+        placeholder.alignment = TextAnchor.MiddleLeft;
+        placeholder.raycastTarget = false;
+
+        var inputText = CreateText(inputGo.transform, "Text", "", 18, TextPrimary, FontStyle.Normal);
+        StretchFull(inputText.rectTransform);
+        inputText.rectTransform.offsetMin = new Vector2(12, 4);
+        inputText.rectTransform.offsetMax = new Vector2(-12, -4);
+        inputText.alignment = TextAnchor.MiddleLeft;
+        inputText.supportRichText = false;
+
+        var field = inputGo.GetComponent<InputField>();
+        field.textComponent = inputText;
+        field.placeholder = placeholder;
+        field.caretColor = Accent;
+        field.selectionColor = new Color(Accent.r, Accent.g, Accent.b, 0.35f);
+        return field;
+    }
+
+    Button CreateMenuButton(Transform parent, string label, UnityEngine.Events.UnityAction onClick)
     {
         var go = new GameObject(label, typeof(RectTransform), typeof(Image), typeof(Button));
         go.transform.SetParent(parent, false);
@@ -372,6 +472,7 @@ public class MainMenuController : MonoBehaviour
         StretchFull(text.rectTransform);
         text.alignment = TextAnchor.MiddleCenter;
         text.raycastTarget = false;
+        return btn;
     }
 
     Text CreateText(Transform parent, string name, string content, int size, Color color, FontStyle style)
@@ -430,11 +531,15 @@ public class MainMenuController : MonoBehaviour
 
     void ShowCreate()
     {
+        if (_createStatus != null)
+            _createStatus.text = "";
         SetActiveOnly(_createPanel);
     }
 
     void ShowJoin()
     {
+        if (_joinStatus != null)
+            _joinStatus.text = "";
         SetActiveOnly(_joinPanel);
     }
 
@@ -451,14 +556,10 @@ public class MainMenuController : MonoBehaviour
         _settingsPanel.SetActive(panel == _settingsPanel);
     }
 
-    void OnCreateLobbyConfirm()
+    void LoadGameSceneOffline()
     {
-        Debug.Log("[MainMenu] Создание лобби (заглушка) → загрузка игры");
-        LoadGameScene();
-    }
+        GameSessionMode.SetOffline();
 
-    void LoadGameScene()
-    {
         if (string.IsNullOrEmpty(gameSceneName))
         {
             Debug.LogError("[MainMenu] Не задано имя игровой сцены");
@@ -469,7 +570,7 @@ public class MainMenuController : MonoBehaviour
         EnsureSceneInBuildSettings(GameScenePath);
 #endif
 
-        Debug.Log($"[MainMenu] Загрузка сцены '{gameSceneName}'…");
+        Debug.Log($"[MainMenu] Офлайн-загрузка '{gameSceneName}'…");
 
         if (Application.CanStreamedLevelBeLoaded(gameSceneName))
         {
