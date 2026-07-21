@@ -302,7 +302,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   gameTitle: Cat Factori
   developerName: "\u0420\u0410\u0417\u0420\u0410\u0411\u041E\u0422\u0427\u0418\u041A"
-  gameSceneName: SampleScene
+  gameSceneName: MainScene
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

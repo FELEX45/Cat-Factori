@@ -15,11 +15,11 @@ using UnityEditor;
 /// </summary>
 public class MainMenuController : MonoBehaviour
 {
-    const string GameScenePath = "Assets/Scenes/SampleScene.unity";
+    const string GameScenePath = "Assets/Scenes/MainScene.unity";
 
     [SerializeField] string gameTitle = "Cat Factori";
     [SerializeField] string developerName = "FELEX45";
-    [SerializeField] string gameSceneName = "SampleScene";
+    [SerializeField] string gameSceneName = "MainScene";
 
     Font _font;
     Sprite _uiSprite;
@@ -525,7 +525,7 @@ public class MainMenuController : MonoBehaviour
 
         Debug.LogError(
             $"[MainMenu] Сцена '{gameSceneName}' не доступна для загрузки. " +
-            "Добавь Assets/Scenes/SampleScene.unity в File → Build Settings.");
+            "Добавь Assets/Scenes/MainScene.unity в File → Build Settings.");
     }
 
 #if UNITY_EDITOR

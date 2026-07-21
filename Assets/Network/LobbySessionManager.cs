@@ -13,7 +13,7 @@ public class LobbySessionManager : MonoBehaviour
 {
     public const int MinPasswordLength = 8;
     public const int DefaultMaxPlayers = 8;
-    public const string GameSceneName = "SampleScene";
+    public const string GameSceneName = "MainScene";
 
     public static LobbySessionManager Instance { get; private set; }
 
@@ -266,7 +266,7 @@ public class LobbySessionManager : MonoBehaviour
 
         if (SceneManager.GetActiveScene().name != GameSceneName)
         {
-            Debug.LogWarning("[Lobby] Сцена хоста не пришла вовремя — локальная загрузка SampleScene");
+            Debug.LogWarning("[Lobby] Сцена хоста не пришла вовремя — локальная загрузка MainScene");
             SceneManager.LoadScene(GameSceneName, LoadSceneMode.Single);
         }
     }

@@ -10,7 +10,7 @@ using UnityEngine;
 static class MainMenuBuildSettings
 {
     const string MainMenuPath = "Assets/Scenes/MainMenu.unity";
-    const string GameScenePath = "Assets/Scenes/SampleScene.unity";
+    const string GameScenePath = "Assets/Scenes/MainScene.unity";
 
     static MainMenuBuildSettings()
     {
@@ -52,7 +52,7 @@ static class MainMenuBuildSettings
             };
         }
 
-        // Иначе при открытых MainMenu + SampleScene в Hierarchy оба грузятся → 2 AudioListener
+        // Иначе при открытых MainMenu + MainScene в Hierarchy оба грузятся → 2 AudioListener
         var startScene = AssetDatabase.LoadAssetAtPath<SceneAsset>(MainMenuPath);
         if (startScene != null && EditorSceneManager.playModeStartScene != startScene)
             EditorSceneManager.playModeStartScene = startScene;

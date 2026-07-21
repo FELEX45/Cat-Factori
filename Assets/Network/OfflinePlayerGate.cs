@@ -2,7 +2,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// В онлайн-режиме отключает офлайн-PlayerModel из SampleScene.
+/// В онлайн-режиме отключает офлайн-PlayerModel из MainScene.
 /// </summary>
 public static class OfflinePlayerGate
 {
