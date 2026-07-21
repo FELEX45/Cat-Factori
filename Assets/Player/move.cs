@@ -278,6 +278,12 @@ public class move : MonoBehaviour
         if (cam == null)
             BindSceneCamera();
 
+        // Пока открыт чат или пауза — не двигаемся
+        if (ChatHud.Instance != null && ChatHud.Instance.IsOpen)
+            return;
+        if (PauseMenu.Instance != null && PauseMenu.Instance.IsOpen)
+            return;
+
         HandleCursor();
         HandleDanceInput();
         HandleLook();
@@ -287,16 +293,12 @@ public class move : MonoBehaviour
 
     void HandleCursor()
     {
-        Keyboard kb = Keyboard.current;
+        // ESC обрабатывает PauseMenu; ЛКМ возвращает захват мыши
         Mouse mouse = Mouse.current;
-
-        if (kb != null && kb.escapeKey.wasPressedThisFrame)
-        {
-            Cursor.lockState = CursorLockMode.None;
-            Cursor.visible = true;
-        }
-        else if (mouse != null && mouse.leftButton.wasPressedThisFrame
-                 && Cursor.lockState != CursorLockMode.Locked)
+        if (mouse != null && mouse.leftButton.wasPressedThisFrame
+            && Cursor.lockState != CursorLockMode.Locked
+            && (ChatHud.Instance == null || !ChatHud.Instance.IsOpen)
+            && (PauseMenu.Instance == null || !PauseMenu.Instance.IsOpen))
         {
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
@@ -314,9 +316,10 @@ public class move : MonoBehaviour
         if (isDancing || cam == null || Cursor.lockState != CursorLockMode.Locked)
             return;
 
+        float sens = PlayerProfile.MouseSensitivity;
         Vector2 look = Vector2.zero;
         if (Mouse.current != null)
-            look += Mouse.current.delta.ReadValue() * mouseSensitivity;
+            look += Mouse.current.delta.ReadValue() * sens;
         if (Gamepad.current != null)
             look += Gamepad.current.rightStick.ReadValue() * gamepadLookSpeed * Time.deltaTime;
 

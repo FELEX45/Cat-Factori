@@ -38,6 +38,7 @@ public class MainMenuController : MonoBehaviour
 
     Button _createButton;
     Button _joinButton;
+    SharedSettingsForm _settingsForm;
 
     static readonly Color BgDark = new Color(0.06f, 0.08f, 0.07f, 0.96f);
     static readonly Color PanelBg = new Color(0.10f, 0.14f, 0.12f, 0.98f);
@@ -67,6 +68,7 @@ public class MainMenuController : MonoBehaviour
             100f);
 
         LobbySessionManager.EnsureExists();
+        PlayerProfile.ApplyAudio();
 
         EnsureEventSystem();
         BuildUI();
@@ -308,82 +310,24 @@ public class MainMenuController : MonoBehaviour
 
     void BuildSettingsPanel(Transform parent)
     {
-        var layout = parent.gameObject.AddComponent<VerticalLayoutGroup>();
-        layout.childAlignment = TextAnchor.MiddleCenter;
-        layout.spacing = 14f;
-        layout.padding = new RectOffset(48, 48, 48, 48);
-        layout.childControlWidth = true;
-        layout.childControlHeight = false;
-        layout.childForceExpandWidth = true;
+        _settingsForm = new SharedSettingsForm(_font, _uiSprite, TextPrimary, TextMuted, Accent);
+        _settingsForm.Build(parent, 40);
 
-        var fitter = parent.gameObject.AddComponent<ContentSizeFitter>();
-        fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-
-        var t = CreateText(parent, "Title", "Настройки", 40, TextPrimary, FontStyle.Bold);
-        t.alignment = TextAnchor.MiddleCenter;
-        SetPreferredHeight(t.gameObject, 48f);
-
-        AddSliderRow(parent, "Громкость", 0.8f);
-        AddSliderRow(parent, "Чувствительность мыши", 0.5f);
-
-        var note = CreateText(parent, "Note", "Значения пока не сохраняются — каркас меню.", 16, TextMuted, FontStyle.Normal);
-        note.alignment = TextAnchor.MiddleCenter;
-        SetPreferredHeight(note.gameObject, 28f);
-
-        CreateSpacer(parent, 8f);
-        CreateMenuButton(parent, "Назад", ShowMain);
+        CreateMenuButton(parent, "Сохранить", () =>
+        {
+            _settingsForm.SaveToProfile();
+        });
+        CreateMenuButton(parent, "Назад", () =>
+        {
+            _settingsForm.SaveToProfile();
+            ShowMain();
+        });
     }
 
-    void AddSliderRow(Transform parent, string label, float value)
+    void ShowSettings()
     {
-        var row = new GameObject(label, typeof(RectTransform));
-        row.transform.SetParent(parent, false);
-        SetPreferredHeight(row, 56f);
-
-        var v = row.AddComponent<VerticalLayoutGroup>();
-        v.spacing = 4f;
-        v.childControlWidth = true;
-        v.childControlHeight = true;
-        v.childForceExpandWidth = true;
-
-        var lbl = CreateText(row.transform, "Label", label, 18, TextMuted, FontStyle.Normal);
-        lbl.alignment = TextAnchor.MiddleLeft;
-
-        var sliderGo = new GameObject("Slider", typeof(RectTransform), typeof(Slider));
-        sliderGo.transform.SetParent(row.transform, false);
-        var le = sliderGo.AddComponent<LayoutElement>();
-        le.preferredHeight = 24f;
-        le.minHeight = 24f;
-
-        var bg = CreateImage(sliderGo.transform, "Background", new Color(0.08f, 0.10f, 0.09f, 1f));
-        StretchFull(bg.rectTransform);
-        bg.rectTransform.offsetMin = new Vector2(0, 8);
-        bg.rectTransform.offsetMax = new Vector2(0, -8);
-
-        var fillArea = new GameObject("Fill Area", typeof(RectTransform));
-        fillArea.transform.SetParent(sliderGo.transform, false);
-        StretchFull(fillArea.GetComponent<RectTransform>());
-        fillArea.GetComponent<RectTransform>().offsetMin = new Vector2(0, 8);
-        fillArea.GetComponent<RectTransform>().offsetMax = new Vector2(0, -8);
-
-        var fill = CreateImage(fillArea.transform, "Fill", Accent);
-        StretchFull(fill.rectTransform);
-
-        var handleArea = new GameObject("Handle Slide Area", typeof(RectTransform));
-        handleArea.transform.SetParent(sliderGo.transform, false);
-        StretchFull(handleArea.GetComponent<RectTransform>());
-
-        var handle = CreateImage(handleArea.transform, "Handle", TextPrimary);
-        handle.rectTransform.sizeDelta = new Vector2(18f, 18f);
-
-        var slider = sliderGo.GetComponent<Slider>();
-        slider.fillRect = fill.rectTransform;
-        slider.handleRect = handle.rectTransform;
-        slider.targetGraphic = handle;
-        slider.direction = Slider.Direction.LeftToRight;
-        slider.minValue = 0f;
-        slider.maxValue = 1f;
-        slider.value = value;
+        _settingsForm?.LoadFromProfile();
+        SetActiveOnly(_settingsPanel);
     }
 
     GameObject CreatePanel(Transform parent, string name)
@@ -541,11 +485,6 @@ public class MainMenuController : MonoBehaviour
         if (_joinStatus != null)
             _joinStatus.text = "";
         SetActiveOnly(_joinPanel);
-    }
-
-    void ShowSettings()
-    {
-        SetActiveOnly(_settingsPanel);
     }
 
     void SetActiveOnly(GameObject panel)

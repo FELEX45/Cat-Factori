@@ -6,6 +6,8 @@ public class Mirror : MonoBehaviour
 {
     [SerializeField] int textureSize = 1024;
     [SerializeField] float clipPlaneOffset = 0.05f;
+    [Tooltip("Если пусто — загрузится Resources/MirrorUnlit")]
+    [SerializeField] Shader mirrorShader;
 
     Camera _mirrorCam;
     RenderTexture _rt;
@@ -35,7 +37,6 @@ public class Mirror : MonoBehaviour
         _mirrorCam.farClipPlane = 250f;
         _mirrorCam.clearFlags = CameraClearFlags.Skybox;
 
-        // Камера зеркала не должна слушать звук (иначе warning про 2 AudioListener)
         var mirrorListener = camGo.GetComponent<AudioListener>();
         if (mirrorListener != null)
             Destroy(mirrorListener);
@@ -44,9 +45,13 @@ public class Mirror : MonoBehaviour
         urpData.renderType = CameraRenderType.Base;
         urpData.renderShadows = true;
 
-        Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
+        Shader shader = ResolveShader();
         if (shader == null)
-            shader = Shader.Find("Unlit/Texture");
+        {
+            Debug.LogError("[Mirror] Шейдер не найден. Проверь Assets/Resources/MirrorUnlit.shader");
+            enabled = false;
+            return;
+        }
 
         _mat = new Material(shader) { name = "MirrorMaterial" };
         if (_mat.HasProperty(BaseMapId))
@@ -54,11 +59,31 @@ public class Mirror : MonoBehaviour
         else
             _mat.mainTexture = _rt;
 
-        // Двусторонний материал — зеркало видно с обеих сторон
         if (_mat.HasProperty("_Cull"))
             _mat.SetFloat("_Cull", 0f);
 
         _renderer.material = _mat;
+    }
+
+    Shader ResolveShader()
+    {
+        if (mirrorShader != null)
+            return mirrorShader;
+
+        // Resources — попадает в билд (в отличие от Shader.Find для package-шейдеров)
+        Shader shader = Resources.Load<Shader>("MirrorUnlit");
+        if (shader != null)
+            return shader;
+
+        shader = Shader.Find("CatFactori/MirrorUnlit");
+        if (shader != null)
+            return shader;
+
+        shader = Shader.Find("Universal Render Pipeline/Unlit");
+        if (shader != null)
+            return shader;
+
+        return Shader.Find("Unlit/Texture");
     }
 
     void OnDestroy()
@@ -83,7 +108,6 @@ public class Mirror : MonoBehaviour
             return;
 
         Vector3 pos = transform.position;
-        // Нормаль всегда к игроку — иначе картинка «с изнанки»
         Vector3 normal = transform.forward;
         if (Vector3.Dot(normal, src.transform.position - pos) < 0f)
             normal = -normal;
@@ -112,7 +136,6 @@ public class Mirror : MonoBehaviour
         _mirrorCam.projectionMatrix = src.CalculateObliqueMatrix(clipPlane);
         _mirrorCam.fieldOfView = src.fieldOfView;
         _mirrorCam.aspect = src.aspect;
-        // Персонаж скрыт от Main Camera, но в зеркале должен быть виден
         int playerLayer = LayerMask.NameToLayer("Player");
         if (playerLayer < 0)
             playerLayer = 6;
