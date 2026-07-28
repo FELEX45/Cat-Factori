@@ -110,6 +110,9 @@ public class PauseMenu : MonoBehaviour
             return;
         }
 
+        if (GameplayHud.BlocksWorldInput)
+            return;
+
         if (IsOpen && _settingsPanel != null && _settingsPanel.activeSelf)
         {
             ShowMainPause();
@@ -226,18 +229,24 @@ public class PauseMenu : MonoBehaviour
         BuildMain(_mainPanel.transform);
 
         _settingsPanel = CreateCenteredPanel(_root.transform, "SettingsPause");
+        // Шире, чтобы скролл и кнопки влезали
+        var settingsRt = _settingsPanel.GetComponent<RectTransform>();
+        settingsRt.sizeDelta = new Vector2(640f, 720f);
+        var oldFitter = _settingsPanel.GetComponent<ContentSizeFitter>();
+        if (oldFitter != null)
+            DestroyImmediate(oldFitter);
         _settings = new SharedSettingsForm(_font, _sprite, TextPrimary, TextMuted, Accent);
-        _settings.Build(_settingsPanel.transform, 36);
-        CreateButton(_settingsPanel.transform, "Сохранить", () =>
-        {
-            _settings.SaveToProfile();
-            ShowMainPause();
-        });
-        CreateButton(_settingsPanel.transform, "Назад", () =>
-        {
-            _settings.SaveToProfile();
-            ShowMainPause();
-        });
+        _settings.Build(_settingsPanel.transform, 32,
+            onApply: () =>
+            {
+                _settings.SaveToProfile();
+            },
+            onBack: () =>
+            {
+                _settings.SaveToProfile();
+                ShowMainPause();
+            },
+            scrollHeight: 520f);
         _settingsPanel.SetActive(false);
     }
 

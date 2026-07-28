@@ -311,17 +311,14 @@ public class MainMenuController : MonoBehaviour
     void BuildSettingsPanel(Transform parent)
     {
         _settingsForm = new SharedSettingsForm(_font, _uiSprite, TextPrimary, TextMuted, Accent);
-        _settingsForm.Build(parent, 40);
-
-        CreateMenuButton(parent, "Сохранить", () =>
-        {
-            _settingsForm.SaveToProfile();
-        });
-        CreateMenuButton(parent, "Назад", () =>
-        {
-            _settingsForm.SaveToProfile();
-            ShowMain();
-        });
+        _settingsForm.Build(parent, 36,
+            onApply: () => _settingsForm.SaveToProfile(),
+            onBack: () =>
+            {
+                _settingsForm.SaveToProfile();
+                ShowMain();
+            },
+            scrollHeight: 560f);
     }
 
     void ShowSettings()
@@ -344,7 +341,7 @@ public class MainMenuController : MonoBehaviour
         rt.anchorMin = new Vector2(0.5f, 0.5f);
         rt.anchorMax = new Vector2(0.5f, 0.5f);
         rt.pivot = new Vector2(0.5f, 0.5f);
-        rt.sizeDelta = new Vector2(560f, 0f);
+        rt.sizeDelta = new Vector2(640f, 0f);
         rt.anchoredPosition = Vector2.zero;
 
         go.SetActive(false);

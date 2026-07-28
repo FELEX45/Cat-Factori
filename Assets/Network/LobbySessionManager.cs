@@ -12,7 +12,7 @@ using UnityEngine.SceneManagement;
 public class LobbySessionManager : MonoBehaviour
 {
     public const int MinPasswordLength = 8;
-    public const int DefaultMaxPlayers = 8;
+    public const int DefaultMaxPlayers = 12;
     public const string GameSceneName = "MainScene";
 
     public static LobbySessionManager Instance { get; private set; }

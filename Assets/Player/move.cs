@@ -283,6 +283,8 @@ public class move : MonoBehaviour
             return;
         if (PauseMenu.Instance != null && PauseMenu.Instance.IsOpen)
             return;
+        if (GameplayHud.BlocksWorldInput)
+            return;
 
         HandleCursor();
         HandleDanceInput();
@@ -297,6 +299,7 @@ public class move : MonoBehaviour
         Mouse mouse = Mouse.current;
         if (mouse != null && mouse.leftButton.wasPressedThisFrame
             && Cursor.lockState != CursorLockMode.Locked
+            && !GameplayHud.BlocksWorldInput
             && (ChatHud.Instance == null || !ChatHud.Instance.IsOpen)
             && (PauseMenu.Instance == null || !PauseMenu.Instance.IsOpen))
         {

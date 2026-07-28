@@ -1,14 +1,9 @@
 using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Netcode;
+using Unity.Netcode.Components;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
-using UnityEngine.UI;
-#if ENABLE_INPUT_SYSTEM
-using UnityEngine.InputSystem;
-using UnityEngine.InputSystem.UI;
-#endif
 
 /// <summary>
 /// Сетевой игрок: движение (владелец), ник, nameplate, чат RPC.
@@ -16,7 +11,8 @@ using UnityEngine.InputSystem.UI;
 [RequireComponent(typeof(NetworkObject))]
 public class NetworkPlayer : NetworkBehaviour
 {
-    public static readonly Vector3 SpawnBase = new Vector3(-0.67f, 14.8f, -5.13f);
+    /// <summary>XZ спавна; Y берётся от пола FactoryHall (иначе запасной).</summary>
+    public static readonly Vector3 SpawnBase = new Vector3(-0.67f, 10.5f, -5.13f);
 
     [SerializeField] move movement;
 
@@ -26,6 +22,7 @@ public class NetworkPlayer : NetworkBehaviour
         NetworkVariableWritePermission.Owner);
 
     PlayerNameplate _nameplate;
+    NetworkTransform _netTransform;
     public static NetworkPlayer LocalPlayer { get; private set; }
 
     const int MaxMessageLength = 120;
@@ -36,50 +33,49 @@ public class NetworkPlayer : NetworkBehaviour
     {
         if (movement == null)
             movement = GetComponent<move>();
+        _netTransform = GetComponent<NetworkTransform>();
 
         Nickname.OnValueChanged += OnNicknameChanged;
+        SceneManager.sceneLoaded += OnSceneLoaded;
 
         if (IsOwner)
         {
             LocalPlayer = this;
             Nickname.Value = new FixedString64Bytes(PlayerProfile.Nickname);
             ChatHud.EnsureExists().Bind(this);
-            SceneManager.sceneLoaded += OnSceneLoaded;
-            if (IsInGameScene())
-                SetupLocalPlayer();
-            else if (movement != null)
-                movement.enabled = false;
         }
-        else
+        else if (movement != null)
         {
-            if (movement != null)
-                movement.enabled = false;
+            movement.enabled = false;
             SetLayerRecursively(transform, 0);
         }
 
         EnsureNameplate();
+
+        if (IsInGameScene())
+            PlaceInGameScene();
     }
 
     public override void OnNetworkDespawn()
     {
         Nickname.OnValueChanged -= OnNicknameChanged;
+        SceneManager.sceneLoaded -= OnSceneLoaded;
 
         if (IsOwner)
         {
-            SceneManager.sceneLoaded -= OnSceneLoaded;
             if (LocalPlayer == this)
                 LocalPlayer = null;
+            if (movement != null)
+                movement.enabled = false;
         }
-
-        if (IsOwner && movement != null)
-            movement.enabled = false;
     }
 
-    void OnDestroy()
+    public override void OnDestroy()
     {
         SceneManager.sceneLoaded -= OnSceneLoaded;
         if (LocalPlayer == this)
             LocalPlayer = null;
+        base.OnDestroy();
     }
 
     void OnNicknameChanged(FixedString64Bytes previous, FixedString64Bytes current)
@@ -100,38 +96,85 @@ public class NetworkPlayer : NetworkBehaviour
 
     void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
-        if (!IsOwner || !IsSpawned)
+        if (!IsSpawned)
             return;
         if (scene.name != LobbySessionManager.GameSceneName)
             return;
-        SetupLocalPlayer();
+        PlaceInGameScene();
+    }
+
+    void PlaceInGameScene()
+    {
+        // С Owner-authority позицию выставляет владелец (и она синхронизируется остальным)
+        if (IsOwner)
+            SetupLocalPlayer();
+        else if (IsServer)
+            StartCoroutine(ServerEnsureSpawnNextFrame());
+    }
+
+    /// <summary>
+    /// Если клиент ещё не успел телепортнуться — сервер подстраховывает через кадр.
+    /// При Owner-authority Teleport на сервере может не примениться; тогда ждём владельца.
+    /// </summary>
+    System.Collections.IEnumerator ServerEnsureSpawnNextFrame()
+    {
+        yield return null;
+        if (!IsSpawned || IsOwner)
+            yield break;
+        // Если игрок всё ещё под полом — форсим позицию (работает при server authority;
+        // при owner authority владелец уже должен был телепортнуться)
+        if (transform.position.y < 5f)
+            TeleportToSpawn();
     }
 
     void SetupLocalPlayer()
     {
+        StartCoroutine(OwnerSpawnRoutine());
+    }
+
+    System.Collections.IEnumerator OwnerSpawnRoutine()
+    {
+        // Даём NetworkTransform инициализироваться после спавна/смены сцены
+        yield return null;
         TeleportToSpawn();
         if (movement != null)
         {
             movement.enabled = true;
-            movement.StartCoroutine(BindCameraNextFrame());
+            movement.BindSceneCamera();
         }
-        Debug.Log($"[Network] Local player «{Nickname.Value}» в {SceneManager.GetActiveScene().name}");
+        Debug.Log($"[Network] Local player «{Nickname.Value}» в {SceneManager.GetActiveScene().name} @ {transform.position}");
     }
 
-    System.Collections.IEnumerator BindCameraNextFrame()
+    public static Vector3 GetSpawnPosition(ulong clientId)
     {
-        yield return null;
-        if (movement != null)
-            movement.BindSceneCamera();
+        float y = SpawnBase.y;
+        var hall = FindAnyObjectByType<FactoryHall>();
+        Vector3 origin = hall != null ? hall.transform.position : SpawnBase;
+        if (hall != null)
+            y = hall.transform.position.y + 0.2f;
+
+        // Чётные — сторона КБ (слева), нечётные — цех (справа)
+        bool kbSide = (clientId % 2UL) == 0UL;
+        float sideX = kbSide ? -12f : 12f;
+        float lane = (clientId / 2UL) * 2f;
+        return new Vector3(origin.x + sideX + (kbSide ? lane : -lane), y, origin.z);
     }
 
     void TeleportToSpawn()
     {
-        Vector3 pos = SpawnBase + new Vector3(OwnerClientId * 2f, 0f, 0f);
+        Vector3 pos = GetSpawnPosition(OwnerClientId);
         var cc = GetComponent<CharacterController>();
         if (cc != null)
             cc.enabled = false;
-        transform.SetPositionAndRotation(pos, Quaternion.identity);
+
+        if (_netTransform == null)
+            _netTransform = GetComponent<NetworkTransform>();
+
+        if (_netTransform != null)
+            _netTransform.Teleport(pos, Quaternion.identity, Vector3.one);
+        else
+            transform.SetPositionAndRotation(pos, Quaternion.identity);
+
         if (cc != null)
             cc.enabled = true;
     }
