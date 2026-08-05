@@ -214,6 +214,9 @@ public class FactoryHall : MonoBehaviour
         light.color = lightColor;
         light.intensity = lightIntensity;
         light.shadows = LightShadows.Soft;
+        light.shadowStrength = 0.65f;
+        light.shadowBias = 0.05f;
+        light.shadowNormalBias = 0.4f;
 
         if (go.GetComponent<UniversalAdditionalLightData>() == null)
             go.AddComponent<UniversalAdditionalLightData>();

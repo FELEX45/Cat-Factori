@@ -94,21 +94,9 @@ public class move : MonoBehaviour
     /// </summary>
     public void BindSceneCamera()
     {
-        Camera mainCam = Camera.main;
-        if (mainCam == null)
-        {
-            foreach (var c in FindObjectsByType<Camera>(FindObjectsInactive.Exclude))
-            {
-                if (c != null && c.enabled && c.gameObject.scene.IsValid()
-                    && c.gameObject.scene.name == LobbySessionManager.GameSceneName)
-                {
-                    mainCam = c;
-                    break;
-                }
-            }
-        }
+        Camera mainCam = FindGameplayCamera();
 
-        // Уже привязана правильно — не трогаем (иначе Start() убьёт камеру после SetupLocalPlayer)
+        // Уже привязана правильно — не трогаем
         if (cam != null && mainCam != null && cam == mainCam.transform && cam.parent == transform)
         {
             EnsureSingleAudioListener(mainCam);
@@ -139,14 +127,75 @@ public class move : MonoBehaviour
         if (!mainCam.CompareTag("MainCamera"))
             mainCam.tag = "MainCamera";
 
+        // На всякий случай выключить камеры, залипшие в декорациях/станках
+        DisableForeignCameras(mainCam);
+
         EnsureSingleAudioListener(mainCam);
 
         cam = mainCam.transform;
         cam.SetParent(transform, false);
-        cam.localPosition = new Vector3(0f, eyeHeight, 0f);
+        // Глаза чуть выше пояса — модель кота крупная
+        float h = eyeHeight;
+        var cc = controller != null ? controller : GetComponent<CharacterController>();
+        if (cc != null)
+            h = Mathf.Max(eyeHeight, cc.height * 0.55f);
+        cam.localPosition = new Vector3(0f, h, 0.12f);
         cam.localRotation = Quaternion.identity;
         pitch = 0f;
         mainCam.enabled = true;
+        mainCam.nearClipPlane = 0.05f;
+    }
+
+    static Camera FindGameplayCamera()
+    {
+        // 1) Явно Main Camera сцены
+        foreach (var c in FindObjectsByType<Camera>(FindObjectsInactive.Exclude))
+        {
+            if (c == null || !c.enabled) continue;
+            if (c.gameObject.name == "Main Camera" || c.gameObject.name == "PlayerCamera")
+                return c;
+        }
+
+        // 2) По тегу, но не из FactoryZones / станков
+        Camera tagged = Camera.main;
+        if (tagged != null && !IsUnderFactoryProps(tagged.transform))
+            return tagged;
+
+        foreach (var c in FindObjectsByType<Camera>(FindObjectsInactive.Exclude))
+        {
+            if (c == null || !c.enabled) continue;
+            if (IsUnderFactoryProps(c.transform)) continue;
+            if (c.gameObject.scene.IsValid()
+                && c.gameObject.scene.name == LobbySessionManager.GameSceneName)
+                return c;
+        }
+
+        return null;
+    }
+
+    static bool IsUnderFactoryProps(Transform t)
+    {
+        while (t != null)
+        {
+            string n = t.name;
+            if (n == "FactoryZones" || n == "Visual" || n == "FactoryGameplay"
+                || n.Contains("TableSaw") || n.Contains("Rulet") || n.Contains("Monitor"))
+                return true;
+            t = t.parent;
+        }
+        return false;
+    }
+
+    static void DisableForeignCameras(Camera keep)
+    {
+        foreach (var c in FindObjectsByType<Camera>(FindObjectsInactive.Include))
+        {
+            if (c == null || c == keep) continue;
+            if (!IsUnderFactoryProps(c.transform)) continue;
+            c.enabled = false;
+            if (c.CompareTag("MainCamera"))
+                c.tag = "Untagged";
+        }
     }
 
     Camera CreateFallbackCamera()
@@ -286,26 +335,39 @@ public class move : MonoBehaviour
         if (GameplayHud.BlocksWorldInput)
             return;
 
-        HandleCursor();
+        // В редакторе курсор часто «отлипает» — возвращаем захват при WASD/клике
+        EnsureCursorLockedForGameplay();
         HandleDanceInput();
         HandleLook();
         HandleMovement();
         UpdateAnimation();
     }
 
-    void HandleCursor()
+    void EnsureCursorLockedForGameplay()
     {
-        // ESC обрабатывает PauseMenu; ЛКМ возвращает захват мыши
+        if (Cursor.lockState == CursorLockMode.Locked)
+            return;
+
         Mouse mouse = Mouse.current;
-        if (mouse != null && mouse.leftButton.wasPressedThisFrame
-            && Cursor.lockState != CursorLockMode.Locked
-            && !GameplayHud.BlocksWorldInput
-            && (ChatHud.Instance == null || !ChatHud.Instance.IsOpen)
-            && (PauseMenu.Instance == null || !PauseMenu.Instance.IsOpen))
+        Keyboard kb = Keyboard.current;
+        bool wantLock = false;
+        if (mouse != null && mouse.leftButton.wasPressedThisFrame)
+            wantLock = true;
+        if (kb != null && (kb.wKey.isPressed || kb.aKey.isPressed || kb.sKey.isPressed || kb.dKey.isPressed
+            || kb.upArrowKey.isPressed || kb.downArrowKey.isPressed
+            || kb.leftArrowKey.isPressed || kb.rightArrowKey.isPressed))
+            wantLock = true;
+
+        if (wantLock)
         {
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
         }
+    }
+
+    void HandleCursor()
+    {
+        // оставлено для совместимости — логика в EnsureCursorLockedForGameplay
     }
 
     void HandleDanceInput()
@@ -316,15 +378,23 @@ public class move : MonoBehaviour
 
     void HandleLook()
     {
-        if (isDancing || cam == null || Cursor.lockState != CursorLockMode.Locked)
+        if (isDancing || cam == null)
             return;
 
+        // Даже без lock крутим камеру мышью, если Game в фокусе и кнопка зажата —
+        // но основной путь: lock + delta
         float sens = PlayerProfile.MouseSensitivity;
         Vector2 look = Vector2.zero;
         if (Mouse.current != null)
-            look += Mouse.current.delta.ReadValue() * sens;
+        {
+            if (Cursor.lockState == CursorLockMode.Locked)
+                look += Mouse.current.delta.ReadValue() * sens;
+        }
         if (Gamepad.current != null)
             look += Gamepad.current.rightStick.ReadValue() * gamepadLookSpeed * Time.deltaTime;
+
+        if (look.sqrMagnitude < 0.000001f)
+            return;
 
         transform.Rotate(0f, look.x, 0f);
         pitch = Mathf.Clamp(pitch - look.y, minPitch, maxPitch);

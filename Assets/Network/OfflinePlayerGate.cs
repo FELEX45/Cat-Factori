@@ -1,8 +1,10 @@
+using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// В онлайн-режиме отключает офлайн-PlayerModel из MainScene.
+/// В онлайн-режиме отключает офлайн-PlayerModel из MainScene,
+/// но только когда сетевой игрок реально есть / сеть слушает.
 /// </summary>
 public static class OfflinePlayerGate
 {
@@ -21,21 +23,40 @@ public static class OfflinePlayerGate
 
     static void HideIfNeeded(Scene scene)
     {
-        if (!GameSessionMode.IsOnline)
-            return;
         if (scene.name != LobbySessionManager.GameSceneName)
             return;
 
-        // Убрать UI главного меню, если сцена меню ещё висит
         var menuCanvas = GameObject.Find("MainMenuCanvas");
         if (menuCanvas != null)
             Object.Destroy(menuCanvas);
 
         var player = GameObject.Find("PlayerModel");
-        if (player != null)
+        if (player == null)
+            return;
+
+        bool networkLive = NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening;
+        bool hasLocalNetPlayer = NetworkPlayer.LocalPlayer != null;
+
+        // Флаг Online мог остаться после прошлой сессии (Domain Reload off) —
+        // не гасим PlayerModel, пока сети реально нет.
+        if (GameSessionMode.IsOnline && (networkLive || hasLocalNetPlayer))
         {
-            player.SetActive(false);
-            Debug.Log("[Network] Offline PlayerModel отключён (онлайн-сессия) — используется сетевой NetworkPlayer (та же модель)");
+            if (player.activeSelf)
+            {
+                player.SetActive(false);
+                Debug.Log("[Network] Offline PlayerModel отключён — используется NetworkPlayer");
+            }
+        }
+        else
+        {
+            if (!GameSessionMode.IsOnline || !networkLive)
+                GameSessionMode.SetOffline();
+
+            if (!player.activeSelf)
+            {
+                player.SetActive(true);
+                Debug.Log("[Bootstrap] Offline PlayerModel включён обратно");
+            }
         }
     }
 }
